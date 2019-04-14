@@ -976,7 +976,7 @@ function Rev(me) {
             data.setData('text/plain', frag.textContent);
         }
         if (evt.type === 'dragend') {
-            // console.log('dragend');
+            console.log('dragend');
             // FIXME 妈蛋，有时候并不会触发dragend
             var frag = rng.cloneContents();
             me.document.execCommand('delete', false, null);

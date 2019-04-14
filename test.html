@@ -18,12 +18,21 @@
 </head>
 
 <body>
+    <p>
+        所有修改人：
+        <span style="color: gold">soongwait</span>、
+        <span style="color: red">veiky</span>、
+        <span style="color: blue">sun</span><br>
+        当前修改人：
+        <span style="color: red">veiky</span>
+    </p>
     <script type="text/plain" id="editor"></script>
     <script>
         var ue =
             UE.getEditor('editor', {
                 //这里可以选择自己需要的工具按钮名称,此处仅选择如下五个
-                toolbars: [['FullScreen', 'Source', 'Undo', 'Redo', 'Bold', 'Italic', 'Underline']],
+                // toolbars: [['FullScreen', 'Source', 'Undo', 'Redo', 'Bold', 'Italic', 'Underline']],
+                toolbars: [['FullScreen', 'Source', 'Undo', 'Redo']],
                 //focus时自动清空初始化时的内容
                 autoClearinitialContent: false,
                 //关闭字数统计
