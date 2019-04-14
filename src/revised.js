@@ -681,7 +681,7 @@ function Rev(me) {
         if (rng.collapsed) return;
 
         var start = rng.startContainer, end = rng.endContainer, tmp;
-        // console.log('before delete\n', rng.startOffset, __toString(start), '\n', rng.endOffset, __toString(end));
+        console.log('before delete\n', rng.startOffset, __toString(start), '\n', rng.endOffset, __toString(end));
         if (typeof cursorToStart === 'undefined') {
             cursorToStart = sel.focusNode === start && sel.focusOffset === rng.startOffset;
         }
@@ -690,7 +690,7 @@ function Rev(me) {
         rng = sel.getRangeAt(0);
         start = rng.startContainer;
         end = rng.endContainer;
-        // console.log('before delete ... include invisible\n', rng.startOffset, __toString(start), '\n', rng.endOffset, __toString(end));
+        console.log('before delete ... include invisible\n', rng.startOffset, __toString(start), '\n', rng.endOffset, __toString(end));
         var frag = rng.cloneContents();
         Array.from(frag.childNodes).forEach((e, i) => {
             // console.log(`frag[${i}]`, __toString(e));
@@ -993,6 +993,7 @@ function Rev(me) {
 
     // 剪切和粘贴
     var __cut = function (evt) {
+        // TODO 需要把内容放到剪贴板里
         __delete();
         me.fireEvent('saveScene');
         me.fireEvent('selectionChange');
@@ -1027,6 +1028,7 @@ function Rev(me) {
     };
     // 这里才是真正的粘贴处理
     // TODO 多行文本需要处理一下
+    // TODO 注意需要过滤格式，否则会粘贴一些奇奇怪怪的东西
     var __pastebin = document.createElement('DIV');
     me.addListener('beforepaste', function (cmd, html, root) {
         if (!html || !html.html) return;
@@ -1084,6 +1086,8 @@ function Rev(me) {
                 toPlain(p);
             }
         });
+        me.fireEvent('saveScene');
+        me.fireEvent('selectionChange');
         __delete();
 
         if (mline) {
@@ -1106,6 +1110,8 @@ function Rev(me) {
             me.document.execCommand('insertHtml', false, __pastebin.innerHTML);
         }
         __pastebin.innerHTML = '';
+        me.fireEvent('saveScene');
+        me.fireEvent('selectionChange');
     });
 
     // 输入法
@@ -1223,21 +1229,36 @@ function Rev(me) {
         }
     };
 
+    var __getContentLength = me.getContentLength;
+
     var __setRevised = function (revised) {
+        if (!revised) {
+            me.body.querySelectorAll('del').forEach(e => {
+                UE.dom.domUtils.remove(e);
+            });
+            me.body.querySelectorAll('ins').forEach(e => {
+                while (e.firstChild) {
+                    e.parentNode.insertBefore(e.firstChild, e);
+                }
+                UE.dom.domUtils.remove(e);
+            });
+        }
+
         if (me.options.revised) {
-            me.body.addEventListener('keydown', __keydown, false);
-            me.body.addEventListener('compositionstart', __compStart, false);
-            me.body.addEventListener('compositionupdate', __compUpdate, false);
-            me.body.addEventListener('compositionend', __compEnd, false);
-            me.body.addEventListener('cut', __cut, false);
-            me.body.addEventListener('paste', __paste, false);
-            me.body.addEventListener('drag', __drag, false);
-            me.body.addEventListener('dragstart', __drag, false);
-            me.body.addEventListener('dragend', __drag, false);
-            me.body.addEventListener('dragover', __drag, false);
-            me.body.addEventListener('dragenter', __drag, false);
-            me.body.addEventListener('dragleave', __drag, false);
-            me.body.addEventListener('drop', __drop, false);
+            me.body.removeEventListener('keydown', __keydown, false);
+            me.body.removeEventListener('compositionstart', __compStart, false);
+            me.body.removeEventListener('compositionupdate', __compUpdate, false);
+            me.body.removeEventListener('compositionend', __compEnd, false);
+            me.body.removeEventListener('cut', __cut, false);
+            me.body.removeEventListener('paste', __paste, false);
+            me.body.removeEventListener('drag', __drag, false);
+            me.body.removeEventListener('dragstart', __drag, false);
+            me.body.removeEventListener('dragend', __drag, false);
+            me.body.removeEventListener('dragover', __drag, false);
+            me.body.removeEventListener('dragenter', __drag, false);
+            me.body.removeEventListener('dragleave', __drag, false);
+            me.body.removeEventListener('drop', __drop, false);
+            me.getContentLength = __getContentLength;
         }
         me.options.revised = revised;
         if (me.options.revised) {
@@ -1254,19 +1275,76 @@ function Rev(me) {
             me.body.addEventListener('dragenter', __drag, false);
             me.body.addEventListener('dragleave', __drag, false);
             me.body.addEventListener('drop', __drop, false);
+            me.getContentLength = function(ingoneHtml, tagNames) {
+                var count =  __getContentLength.call(me, ingoneHtml, tagNames);
+                this.document.querySelectorAll('del').forEach(del => {
+                    count -= del.textContent.length;
+                });
+                return count;
+            }
         }
     };
 
     var __setUserColors = function (colors) {
         if (!colors || typeof colors !== 'object') return;
-
         var str = Object.keys(colors).map(user => `
-*[cite="${user}"],
-*[cite="${user}"] {
-    color: ${colors[user]};
-}`).join('\n');
+        *[cite="${user}"],*[cite="${user}"] { color: ${colors[user]}; }
+        del,ins {
+            position: relative;
+        }
+        del:hover:before,
+        ins:hover:before {
+            position: fixed;
+            left: 2px;
+            bottom: 1px;
+            background-color: rgba(0,0,0,0.6);
+            color: white;
+            padding: 3px 6px;
+            font-size: xx-small;
+        }
+        del:hover:before {
+            content: attr(cite)" 删除于 "attr(datetime);
+        }
+        ins:hover:before {
+            content: attr(cite)" 添加于 "attr(datetime);
+        }
+        `).join('\n');
         UE.utils.cssRule('revised', str, me.document);
-    }
+    };
+
+    var __setRevisedVisible = function (visible) {
+        if (typeof visible === 'boolean') {
+            var str = '\
+            del {display:none;} \
+            ins {text-decoration: none;} \
+            *[cite] {color:inherit;},\
+            ';
+            UE.utils.cssRule('revised-visible', visible ? '' : str, me.document);
+            // me.options.revisedVisible = visible;
+            __revisedVisible = visible;
+
+        }
+        // TODO 当显示某个人的痕迹的时候，__revisedVisible这个布尔标记表达不了全部意思
+        // 上面的includeInvisible也就失效了
+        else if (typeof visible === 'string') {
+            var str = Object.keys(me.options.colors).map(user => {
+                if(user === visible) {
+                    return `*[cite="${user}"],*[cite="${user}"] { color: ${me.options.colors[user]}; }`;
+                }
+                else {
+                    return `del[cite="${user}"] {display:none;}
+                    ins[cite="${user}"] {text-decoration: none; color: inherit;}`;
+                }
+            }).join('\n');
+            // `
+            // del[cite^="${visible}"] {display:none;} 
+            // ins[cite^="${visible}"] {text-decoration: none;} 
+            // *[cite^="${visible}"] {color:inherit;}
+            // `;
+            UE.utils.cssRule('revised-visible', str, me.document);
+        }
+    };
+
 
     __setRevised(me.options.revised);
     __setUserColors(me.options.colors);
@@ -1276,12 +1354,119 @@ function Rev(me) {
     // this.compStart = __compStart;
     // this.compEnd = __compEnd;
     this.setRevised = __setRevised;
+    this.setRevisedVisible = __setRevisedVisible;
+};
+
+
+
+var btn, combox;
+UE.registerUI('revised', function (editor, uiName) {
+    var dialog = new UE.ui.Dialog({
+        // iframeUrl: 'customizeDialogPage.html',
+        content: '<div style="width:500px; height 300px; padding: 20px;">关闭修订，将<strong>删除已经记录的所有人的修改痕迹</strong>，此操作是不可撤销的，你真的确定要关闭它吗？</div>',
+        editor: editor,
+        name: uiName,
+        title: "提示",
+        cssRules: "width:600px;height:300px;",
+        buttons: [
+            {
+                className: 'edui-okbutton',
+                label: '确定',
+                onclick: function () {
+                    var rev = REV.getInstance(editor);
+                    rev.setRevised(!editor.options.revised);
+                    btn.setChecked(editor.options.revised);
+                    combox.setDisabled(!editor.options.revised);
+
+                    dialog.close(true);
+                }
+            },
+            {
+                className: 'edui-cancelbutton',
+                label: '取消',
+                onclick: function () {
+                    dialog.close(false);
+                }
+            }
+        ]
+    });
+
+    btn = new UE.ui.Button({
+        name: uiName,
+        title: '修订：记录对文档的所有改动',
+        cssRules: 'background-position: -520px 0;',
+        onclick: function () {
+            if (!editor.options.revised) {
+                var rev = REV.getInstance(editor);
+                rev.setRevised(!editor.options.revised);
+                btn.setChecked(editor.options.revised);
+                combox.setDisabled(!editor.options.revised);
+            } else {
+                dialog.render();
+                dialog.open();
+            }
+        }
+    });
+    editor.addListener('ready', function () {
+        btn.setChecked(editor.options.revised);
+    });
+    return btn;
+});
+
+UE.registerUI('revisedVisible', function (editor, uiName) {
+    var renderLabelHtml = function () {
+        //这个是希望每个条目的字体是不同的
+        return '<div class="edui-label %%-label" style="line-height:2;font-size:12px;">' + (this.label || '') + '</div>';
+    };
+    var items = [{
+        label: '所有人的修改痕迹',
+        value: 'showAll',
+        renderLabelHtml: renderLabelHtml
+    }, {
+        label: '不显示痕迹',
+        value: 'showNone',
+        renderLabelHtml: renderLabelHtml
+    }];
+    Object.keys(editor.options.colors).forEach(user => {
+        items.splice(items.length - 1, 0, {
+            label: `${user}的修改痕迹`,
+            value: 'show_' + user,
+            renderLabelHtml: renderLabelHtml
+        });
+    });
+
+    combox = new UE.ui.Combox({
+        editor: editor,
+        items: items,
+        onselect: function (t, index) {
+            // editor.execCommand(uiName, this.items[index].value);
+            var val = this.items[index].value;
+            var rev = REV.getInstance(editor);
+            if (val === 'showAll') {
+                rev.setRevisedVisible(true);
+            }
+            else if (val.startsWith('show_')) {
+                var user = val.substring(5);
+                rev.setRevisedVisible(user);
+            }
+            else {
+                rev.setRevisedVisible(false);
+            }
+        },
+        title: '是否显示修改痕迹',
+        initValue: editor.options.revisedVisible ? 'showAll' : 'showNone'
+    });
+    return combox;
+});
+
+var __cache = {};
+var REV = {
+    getInstance: function (me) {
+        // console.log(__cache)
+        return __cache[me.uid] || (__cache[me.uid] = new Rev(me));
+    }
 };
 
 if (typeof module !== 'undefined') {
-    module.exports = {
-        getInstance: function (me) {
-            return new Rev(me);
-        }
-    };
+    module.exports = REV;
 }
